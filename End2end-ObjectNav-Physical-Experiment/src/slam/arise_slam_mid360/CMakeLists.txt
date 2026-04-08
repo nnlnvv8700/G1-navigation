@@ -97,9 +97,9 @@ add_library(AriseSlamLib SHARED
 )
 
 # Set up library include directory
-target_include_directories(AriseSlamLib PUBLIC  
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/AriseSlamLib>  
-    $<INSTALL_INTERFACE:include/AriseSlamLib>  # <prefix>/include/mylib
+target_include_directories(AriseSlamLib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 
 ament_target_dependencies(AriseSlamLib
@@ -139,11 +139,13 @@ target_link_libraries(imu_preintegration_node
 # Feature Extraction node
 add_executable(feature_extraction_node src/featureExtraction_node.cpp)
 ament_target_dependencies(feature_extraction_node rclcpp nav_msgs sensor_msgs arise_slam_mid360_msgs livox_ros_driver2)
+target_include_directories(feature_extraction_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_link_libraries(feature_extraction_node 
   ${PCL_LIBRARIES}
   ${TBB_LIBRARIES}
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
   AriseSlamLib
 )
 
