@@ -4,15 +4,20 @@
 
 ## 项目组成
 
-根目录下目前主要有两个实际开发子项目：
+根目录下目前主要有三个实际开发子项目：
 
 - `End2end-ObjectNav-Physical-Experiment/`
   - 主导航工作空间
   - 包含 `Livox Mid-360` 驱动、`arise_slam_mid360`、基础自主导航、路线规划、探索规划、Unity 仿真和实机启动脚本
+- `End2end-ObjectNav-Physical-Experiment-unitree_g1/`
+  - 面向 `Unitree G1` 收口过的一套导航工作空间
+  - 默认控制链是 `unitree_webrtc_ros`
+  - 当前更适合作为 G1 实机默认入口
 - `g1_ros_package/`
   - `Unitree G1` 相关 ROS2 包
   - 当前你实际在用的是 `controller/g1_controller`
   - 作用是把 ROS2 的 `/cmd_vel` 转发给 `g1_loco_client`
+  - 更适合作为 G1 控制的 `Plan B`
 
 其他目录：
 
@@ -23,19 +28,27 @@
 
 ## 推荐理解方式
 
-你可以把整个仓库理解成两层：
+你可以把整个仓库理解成三层：
 
 1. `End2end-ObjectNav-Physical-Experiment`
 作用：
 - 负责感知、SLAM、规划、RViz、仿真与实机主链路
 
-2. `g1_ros_package/controller/g1_controller`
+2. `End2end-ObjectNav-Physical-Experiment-unitree_g1`
+作用：
+- 负责 G1 默认实机链路
+- 在原导航工程上接入了 `unitree_webrtc_ros`
+- 默认思路是 `/cmd_vel -> unitree_webrtc_ros -> G1`
+
+3. `g1_ros_package/controller/g1_controller`
 作用：
 - 负责把导航输出的 `/cmd_vel` 速度指令接到 `Unitree G1`
+- 这是备用控制链，不是当前首选
 
 也就是说：
 
 - 如果你在改 `MID360`、`SLAM`、导航、launch、RViz，就主要在 `End2end-ObjectNav-Physical-Experiment/`
+- 如果你在改 G1 默认实机启动、WebRTC 控制、G1 参数配置，就主要在 `End2end-ObjectNav-Physical-Experiment-unitree_g1/`
 - 如果你在改 G1 底层速度桥接，就主要在 `g1_ros_package/controller/g1_controller/`
 
 ## 最常用进入方式
@@ -44,6 +57,12 @@
 
 ```bash
 cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment
+```
+
+进入 G1 默认实机工程：
+
+```bash
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
 ```
 
 进入 G1 控制桥接工程：
@@ -69,6 +88,13 @@ source /opt/ros/jazzy/setup.bash
 
 ```bash
 cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment
+source install/setup.bash
+```
+
+如果你已经编译过 G1 默认工作空间：
+
+```bash
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
 source install/setup.bash
 ```
 
@@ -222,12 +248,26 @@ source install/setup.bash
 
 ## 如果要接 Unitree G1
 
-这个点非常关键：
+这里明确分成两种方案：
 
-- `End2end-ObjectNav-Physical-Experiment` 的主启动脚本目前不会自动拉起 `g1_controller`
-- 所以如果你希望导航输出真正驱动 G1，需要额外开一个终端启动 `g1_controller`
+- `Plan A`：`End2end-ObjectNav-Physical-Experiment` 加 `g1_controller` 桥接
+- `Plan B`：只使用 `End2end-ObjectNav-Physical-Experiment-unitree_g1`
 
-推荐操作顺序：
+### Plan A：主导航工程 + G1 桥接
+
+这套方案的控制链是：
+
+```text
+/cmd_vel -> g1_controller -> g1_loco_client -> G1
+```
+
+适用情况：
+
+- 你继续基于老的主导航工程开发
+- 你已经在用 `g1_ros_package/controller/g1_controller`
+- 你想保留旧桥接链路，便于继续沿用原来的调试方式
+
+启动顺序：
 
 1. 先启动主导航链路
 
@@ -238,7 +278,7 @@ source install/setup.bash
 ./system_real_robot.sh
 ```
 
-2. 再启动 G1 桥接
+2. 再另开一个终端启动 G1 桥接
 
 ```bash
 cd /home/mhw/unitree_project/g1_ros_package
@@ -249,11 +289,74 @@ ros2 launch g1_controller cmd_vel_to_g1.launch.py
 
 只要导航链路里有 `/cmd_vel` 输出，桥接节点就会把速度转发给 G1。
 
+### Plan B：只用 `End2end-ObjectNav-Physical-Experiment-unitree_g1`
+
+这套工程已经按 G1 收口过，默认控制链是：
+
+```text
+/cmd_vel -> unitree_webrtc_ros/unitree_control -> Unitree WebRTC -> G1
+```
+
+这条链路下：
+
+- 不需要再额外启动 `g1_controller`
+- 更适合作为收口后的 G1 独立方案
+- 需要提前准备 `unitree_webrtc_connect` 和 Python 虚拟环境
+
+首次上 G1 前，建议先完成这些事：
+
+1. 安装基础环境
+
+```bash
+sudo apt update
+sudo apt install ros-jazzy-desktop-full ros-jazzy-pcl-ros libpcl-dev git cmake \
+  libgoogle-glog-dev libgflags-dev libatlas-base-dev libeigen3-dev libsuitesparse-dev
+```
+
+2. 编译 `Livox-SDK2` 和 `livox_ros_driver2`
+3. 编译 `Sophus`、`Ceres Solver`、`GTSAM`
+4. 编译 `arise_slam_mid360` 与 `arise_slam_mid360_msgs`
+5. 安装 `unitree_webrtc_connect`，并准备好 `~/unitree_venv`
+6. 编译整个 `End2end-ObjectNav-Physical-Experiment-unitree_g1`
+7. 启动前确认 `ROBOT_CONFIG_PATH=unitree/unitree_g1`
+
+推荐启动顺序：
+
+```bash
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source ~/unitree_venv/bin/activate
+source install/setup.bash
+export ROBOT_CONFIG_PATH="unitree/unitree_g1"
+./system_real_robot.sh
+```
+
+如果你还没装好 WebRTC 相关依赖，至少要额外确认：
+
+- `unitree_webrtc_connect` 已安装到当前 Python 环境
+- `unitree_control` 使用的 `robot_ip` 和 `connection_method` 配置正确
+- 机器人和处理机网络连通
+
+注意：
+
+- 不要同时运行 `Plan A` 和 `Plan B`
+- 两套控制后端同时在线时，排查问题会非常困难
+- 如果你明确要沿用老主工程，就走 `Plan A`
+- 如果你要使用收口后的 G1 独立工程，就走 `Plan B`
+
 ## 最常查的文件
 
 主导航 README：
 
 - [README.md](/home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment/README.md)
+
+G1 默认实机 README：
+
+- [README.md](/home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/README.md)
+
+G1 默认实机部署说明：
+
+- [G1_DEPLOYMENT_GUIDE.md](/home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/G1_DEPLOYMENT_GUIDE.md)
 
 G1 桥接 README：
 
@@ -312,9 +415,16 @@ origin -> https://github.com/nnlnvv8700/G1-navigation.git
 
 优先检查：
 
-- `g1_controller` 是否已启动
-- `g1_loco_client` 路径是否正确
-- `network_interface` 是否填对
+- 你当前用的是 `Plan A` 还是 `Plan B`
+- 如果是 `Plan A`：
+  - `g1_controller` 是否已启动
+  - `g1_loco_client` 路径是否正确
+  - `network_interface` 是否填对
+- 如果是 `Plan B`：
+  - `unitree_webrtc_ros` 是否已启动
+  - `~/unitree_venv` 是否已激活
+  - `unitree_webrtc_connect` 是否已安装
+  - `robot_ip` 和 `connection_method` 是否正确
 - `/cmd_vel` 是否真的有消息
 
 ### 4. RViz 打开了但车不动
@@ -329,13 +439,19 @@ origin -> https://github.com/nnlnvv8700/G1-navigation.git
 
 ## 推荐使用方式
 
-如果你现在主要在做导航和 SLAM，优先从这里开始：
+如果你现在主要在做通用导航和 SLAM，优先从这里开始：
 
 ```bash
 cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment
 ```
 
-如果你现在主要在调 G1 速度控制，优先从这里开始：
+如果你现在主要在做 G1 默认实机链路，优先从这里开始：
+
+```bash
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+```
+
+如果你现在主要在调 G1 备用桥接，优先从这里开始：
 
 ```bash
 cd /home/mhw/unitree_project/g1_ros_package
