@@ -421,3 +421,69 @@ cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
 ```bash
 cd /home/mhw/unitree_project/g1_ros_package
 ```
+
+
+
+slam漂移问题：
+先看 3 个最关键的
+
+静止时会不会漂
+让机器人完全不动 20 到 30 秒，看 /state_estimation 和 map -> sensor 是否还在慢慢走。
+当前 /state_estimation 是 IMU 预积分节点直接发的，见 imuPreintegration.cpp (line 57)。
+如果静止都漂，先别调规划，优先查 IMU、时间同步、外参。
+
+IMU 和雷达时间有没有对齐
+重点看：
+
+/imu/data 频率稳不稳
+/lidar/scan 频率稳不稳
+header 时间戳有没有跳变、倒退、明显延迟
+IMU 到 LiDAR 外参对不对
+这个文件里旋转现在是单位阵，见 livox_mid360_calibration.yaml (line 4)。
+如果真机安装时 IMU 和 Mid-360 不是严格同姿态，这里很容易导致漂。
+
+然后重点看配置
+
+use_imu_roll_pitch 现在是关的
+见 livox_mid360.yaml (line 30)、livox_mid360.yaml (line 71)、livox_mid360.yaml (line 117)。
+如果漂移主要表现为俯仰/横滚估计不稳，这里值得重点怀疑。
+
+IMU 加速度限幅可能太紧
+见 livox_mid360.yaml (line 122)。
+现在是：
+
+x: 0.3
+y: 0.2
+z: 0.1
+对真机运动来说，这组值偏保守。
+如果是“静止基本还行，一动就飘”，我会优先怀疑这里。
+
+真机上常见但容易忽略的
+
+传感器安装是否松动
+Mid-360 或 IMU 支架有轻微振动，都会让轨迹发散。
+
+TF/坐标系是否一致
+检查 map / sensor / imu 的方向定义有没有和实际安装反掉。
+
+雷达数据质量
+看点云有没有明显丢包、卡顿、视场遮挡、网卡抖动。
+
+起步方式
+建议先原地静止建图，再低速直线，再小半径转弯。
+一上来快转、快走，最容易把问题放大。
+
+明天如果还漂，最值得留给我 4 样东西
+
+30 秒静止 bag
+话题至少录：
+/imu/data
+/lidar/scan
+/tf
+/state_estimation
+一小段低速直线 bag
+传感器安装照片
+尤其是 IMU 和 Mid-360 相对姿态
+你当时用的这两个配置文件
+livox_mid360.yaml
+livox_mid360_calibration.yaml
