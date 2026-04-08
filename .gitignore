@@ -1,0 +1,22 @@
+# 忽略所有名为 build 的文件夹（无论在哪个深度）
+**/build/
+
+# 忽略所有名为 install 的文件夹
+**/install/
+
+# 忽略所有日志文件
+*.log
+**/logs/
+
+# 针对 ROS/C++ 项目常见的其他冗余文件
+**/devel/
+**/dist/
+**/.vscode/
+.git_backup*/
+rosbag2_*/
+g1_ros_package/imu_lidar_bag/
+g1_ros_package/log/
+End2end-ObjectNav-Physical-Experiment/src/slam/dependency/ceres-solver/build_local/
+End2end-ObjectNav-Physical-Experiment/src/slam/dependency/ceres-solver/local_install/
+End2end-ObjectNav-Physical-Experiment/*.gv
+End2end-ObjectNav-Physical-Experiment/*.pdf
