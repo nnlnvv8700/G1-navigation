@@ -487,3 +487,57 @@ TF/坐标系是否一致
 你当时用的这两个配置文件
 livox_mid360.yaml
 livox_mid360_calibration.yaml
+
+#录包
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+mkdir -p ~/bags
+timeout 30s ros2 bag record \
+  -o ~/bags/g1_slam_static_30s \
+  /imu/data \
+  /lidar/scan \
+  /tf \
+  /tf_static \
+  /state_estimation
+
+#检查
+ros2 bag info ~/bags/g1_slam_static_30s
+
+不计时间：
+
+# 进入 G1 工作空间
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+# 加载 ROS2 环境
+source /opt/ros/jazzy/setup.bash
+
+# 加载当前工作空间环境
+source install/setup.bash
+
+# 创建一个存放 bag 的目录
+mkdir -p ~/bags
+
+# 开始持续录制
+# 说明：
+# -o 指定输出目录
+# /imu/data 是 IMU 数据
+# /lidar/scan 是 Mid-360 点云
+# /tf 和 /tf_static 是坐标变换
+# /state_estimation 是当前 SLAM 输出位姿
+# 停止时按 Ctrl+C
+ros2 bag record \
+  -o ~/bags/g1_slam_check_$(date +%Y%m%d_%H%M%S) \
+  /imu/data \
+  /lidar/scan \
+  /tf \
+  /tf_static \
+  /state_estimation
+
+
+# 查看 ~/bags 里最新一个 bag 的信息
+ros2 bag info "$(ls -td ~/bags/g1_slam_check_* | head -n 1)"
+
+# 回放最新一个时间戳 bag
+ros2 bag play "$(ls -td ~/bags/g1_slam_check_* | head -n 1)"
