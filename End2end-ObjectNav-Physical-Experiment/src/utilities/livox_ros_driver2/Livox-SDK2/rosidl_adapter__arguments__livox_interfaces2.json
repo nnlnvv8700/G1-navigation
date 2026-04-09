@@ -1,7 +1,0 @@
-{
-  "package_name": "livox_ros_driver2",
-  "non_idl_tuples": [
-    "/home/hongyu/unitree_project/End2end-ObjectNav-Physical-Experiment/src/utilities/livox_ros_driver2:msg/CustomPoint.msg",
-    "/home/hongyu/unitree_project/End2end-ObjectNav-Physical-Experiment/src/utilities/livox_ros_driver2:msg/CustomMsg.msg"
-  ]
-}
