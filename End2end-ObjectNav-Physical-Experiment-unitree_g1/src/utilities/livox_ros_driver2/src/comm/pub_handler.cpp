@@ -24,12 +24,32 @@
 
 #include "pub_handler.h"
 
-#include <cstdlib>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 
 namespace livox_ros {
+
+namespace {
+
+const char *TimestampTypeName(uint8_t timestamp_type) {
+  switch (timestamp_type) {
+    case kTimestampTypeNoSync:
+      return "NoSync";
+    case kTimestampTypeGptpOrPtp:
+      return "gPTP/PTP";
+    case kTimestampTypeGps:
+      return "GPS";
+    default:
+      return "Unknown";
+  }
+}
+
+std::atomic<int> g_last_logged_timestamp_type{-1};
+
+}  // namespace
 
 std::atomic<bool> PubHandler::is_timestamp_sync_;
 
@@ -100,6 +120,18 @@ void PubHandler::OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t d
   PubHandler* self = (PubHandler*)client_data;
   if (!self) {
     return;
+  }
+
+  int previous_timestamp_type = g_last_logged_timestamp_type.exchange(static_cast<int>(data->time_type));
+  if (previous_timestamp_type != static_cast<int>(data->time_type)) {
+    std::fprintf(stderr,
+                 "[Livox] packet time_type=%d (%s)%s\n",
+                 static_cast<int>(data->time_type),
+                 TimestampTypeName(data->time_type),
+                 data->time_type == kTimestampTypeNoSync
+                     ? " -> using host receive time fallback"
+                     : " -> using synchronized device timestamps");
+    std::fflush(stderr);
   }
 
   if (data->time_type != kTimestampTypeNoSync) {
