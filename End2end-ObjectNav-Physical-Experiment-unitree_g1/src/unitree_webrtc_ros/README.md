@@ -24,8 +24,11 @@ ROS 2 Jazzy package for controlling Unitree Go2 robot via WebRTC connection. Pro
 sudo apt update
 sudo apt install portaudio19-dev
 
-# Create and activate virtual environment
-python3 -m venv ~/unitree_venv
+# Important: ROS 2 Jazzy uses Python 3.12. Do not use a conda 3.13 env here.
+conda deactivate  # if conda/base is active
+
+# Create and activate a Python 3.12 virtual environment
+/usr/bin/python3.12 -m venv ~/unitree_venv
 source ~/unitree_venv/bin/activate
 
 # Install ROS 2 dependencies
@@ -53,7 +56,7 @@ source /opt/ros/jazzy/setup.bash
 colcon build --packages-select unitree_webrtc_ros
 ```
 
-**Note**: This package uses `#!/usr/bin/env python3` which automatically uses the venv's Python when activated.
+**Note**: This package uses `#!/usr/bin/env python3`, so the active `python3` must be the ROS-compatible Python 3.12 interpreter from `~/unitree_venv`.
 
 ## Usage
 
@@ -186,10 +189,13 @@ unitree_control:
 
 ## Troubleshooting
 
-### ModuleNotFoundError: No module named 'unitree_webrtc_connect'
+### ModuleNotFoundError or `rclpy._rclpy_pybind11` import error
 
-Make sure you activated the virtual environment:
+This usually means ROS Jazzy's Python 3.12 packages are being mixed with a conda Python 3.13 interpreter.
+
+Make sure you deactivate conda and activate the Python 3.12 virtual environment:
 ```bash
+conda deactivate
 source ~/unitree_venv/bin/activate
 ```
 
@@ -213,6 +219,7 @@ source ~/unitree_venv/bin/activate
 
 If you get `ModuleNotFoundError`, make sure venv is activated:
 ```bash
+conda deactivate
 source ~/unitree_venv/bin/activate
 source /opt/ros/jazzy/setup.bash
 source ~/ros2_ws/install/setup.bash

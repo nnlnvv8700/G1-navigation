@@ -24,9 +24,10 @@ sudo apt install ros-jazzy-desktop-full ros-jazzy-pcl-ros libpcl-dev git
 ```
 In a terminal, go to the folder, checkout the 'go2_slow_fast_webrtc' or "unitree_g1" branch, and compile. 
 Note that this skips the SLAM module and Mid-360 lidar driver. The two packages are not needed for simulation.
+To avoid build instability on the robot, the commands below use sequential compilation.
 ```
 git checkout go2_slow_fast_webrtc
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-skip arise_slam_mid360 arise_slam_mid360_msgs livox_ros_driver2
+colcon build --executor sequential --parallel-workers 1 --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-skip arise_slam_mid360 arise_slam_mid360_msgs livox_ros_driver2
 ```
 Download a [Unity environment model for the Mecanum wheel platform](https://drive.google.com/drive/folders/1G1JYkccvoSlxyySuTlPfvmrWoJUO8oSs?usp=sharing) and 
 unzip the files to the 'src/base_autonomy/vehicle_simulator/mesh/unity' folder. 
@@ -155,7 +156,7 @@ under the `lidar_configs` settings,
 set the IP to `192.168.1.1xx`, where xx are the last two digits of the lidar serial number (you can find it on a sticker under a QR code on the lidar).
 
 ```
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select livox_ros_driver2
+colcon build --executor sequential --parallel-workers 1 --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select livox_ros_driver2
 ```
 Connect the lidar to the Ethernet port on the processing computer and power it on. 
 1. Open Network Settings in Ubuntu
@@ -196,7 +197,7 @@ More information about [Ceres Solver is available here](http://ceres-solver.org)
 cd src/slam/dependency/ceres-solver
 mkdir build && cd build
 cmake ..
-make -j6 && sudo make install
+make && sudo make install
 ```
 
 More information about [GTSAM is available here](https://gtsam.org).
@@ -205,14 +206,14 @@ More information about [GTSAM is available here](https://gtsam.org).
 cd src/slam/dependency/gtsam
 mkdir build && cd build
 cmake .. -DGTSAM_USE_SYSTEM_EIGEN=ON -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF
-make -j6 && sudo make install
+make && sudo make install
 sudo /sbin/ldconfig -v
 ```
 
 Now, compile the SLAM module. Note that the Mid-360 lidar driver is a dependency of the SLAM module. Please make sure it is already compiled.
 
 ```
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select arise_slam_mid360 arise_slam_mid360_msgs
+colcon build --executor sequential --parallel-workers 1 --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select arise_slam_mid360 arise_slam_mid360_msgs
 ```
 
 #### 4) Motor Controller
@@ -229,7 +230,7 @@ cd src/base_autonomy/local_planner/launch/local_planner.launch
 
 cd src/utilities/teleop_joy_controller/launch/teleop_joy_controller.launch
 
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select serial teleop_joy_controller
+colcon build --executor sequential --parallel-workers 1 --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select serial teleop_joy_controller
 
 ```
 
@@ -250,7 +251,7 @@ ros2 launch teleop_joy_controller teleop_joy_controller.launch
 After completion of the above setup steps, you can compile the full repository.
 
 ```
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+colcon build --executor sequential --parallel-workers 1 --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
 ### System Usage
@@ -277,11 +278,14 @@ For the current recommended G1 setup in this repository, the tasks below should 
    - `arise_slam_mid360`
    - `arise_slam_mid360_msgs`
 4. Install the Unitree WebRTC control dependency used by the default G1 control path:
-   - create and activate `~/unitree_venv`
+   - if `conda` is active, run `conda deactivate`
+   - create `~/unitree_venv` with `/usr/bin/python3.12 -m venv ~/unitree_venv`
+   - activate `~/unitree_venv`
    - install `unitree_webrtc_connect`
    - make sure `portaudio19-dev` is installed
 5. Build the full repository after the above dependencies are ready.
 6. Before each real-robot session:
+   - if `conda` is active, run `conda deactivate`
    - activate the Python virtual environment if `unitree_webrtc_ros` is used
    - source ROS 2 and the workspace
    - set `ROBOT_CONFIG_PATH=unitree/unitree_g1`
@@ -291,6 +295,27 @@ For the current recommended G1 setup in this repository, the tasks below should 
 The current default G1 control path in this repository is:
 
 `/cmd_vel` -> `unitree_webrtc_ros/unitree_control` -> Unitree WebRTC transport
+
+If the WebRTC transport cannot complete the local handshake on your G1, you can keep this repository's SLAM and planning stack and swap only the control backend:
+
+`/cmd_vel` -> `g1_controller/cmd_vel_to_g1` -> `g1_loco_client` -> G1
+
+The dedicated launch entry for that fallback is:
+
+```bash
+./system_real_robot_g1_bridge.sh --no-rviz
+```
+
+For the `g1_controller` / `g1_loco_client` path, keep the control interface on `enp108s0`. Do not use `Meta` for this bridge unless you have independently verified that your Unitree SDK traffic is routed there.
+
+Common bridge-specific arguments:
+
+```bash
+./system_real_robot_g1_bridge.sh \
+  network_interface:=enp108s0 \
+  g1_loco_client_path:=/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client \
+  unitree_sdk_lib_path:=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64
+```
 
 This means the old serial motor-controller setup in the original repository is not the primary path for G1 anymore. For the default G1 workflow, prioritize:
 
@@ -340,7 +365,7 @@ Build and launch the fallback bridge with:
 ```bash
 cd /home/mhw/unitree_project/g1_ros_package
 source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install --packages-select g1_controller
+colcon build --executor sequential --parallel-workers 1 --symlink-install --packages-select g1_controller
 source install/setup.bash
 ros2 launch g1_controller cmd_vel_to_g1.launch.py
 ```

@@ -283,6 +283,40 @@ export ROBOT_CONFIG_PATH="unitree/unitree_g1"
 
 ### 方案 B：Legacy / Plan B
 
+## 如果要接 Unitree G1
+
+当前按这套已经验证过的 G1 实机流程使用：
+
+- 导航工作空间：`End2end-ObjectNav-Physical-Experiment-unitree_g1`
+- 控制后端：`g1_ros_package/controller/g1_controller`
+- 实际控制链：
+  `/way_point -> /path -> /cmd_vel -> cmd_vel_to_g1 -> g1_loco_client -> G1`
+
+### 启动前先清旧进程
+
+每次重新启动前，先把旧实例杀干净。否则很容易出现：
+
+- 地图重影
+- 点云/TF 叠层
+- 老的 `localPlanner`、`pathFollower`、`livox`、`cmd_vel_to_g1` 干扰新实例
+
+```bash
+pkill -f "ros2 launch vehicle_simulator system_real_robot.launch" || true
+pkill -f "ros2 launch vehicle_simulator system_real_robot_g1_bridge.launch.py" || true
+pkill -f "livox_ros_driver2_node" || true
+pkill -f "feature_extraction_node" || true
+pkill -f "imu_preintegration_node" || true
+pkill -f "laser_mapping_node" || true
+pkill -f "localPlanner" || true
+pkill -f "pathFollower" || true
+pkill -f "terrainAnalysis" || true
+pkill -f "terrainAnalysisExt" || true
+pkill -f "sensorScanGeneration" || true
+pkill -f "visualizationTools" || true
+pkill -f "cmd_vel_to_g1" || true
+pkill -f "unitree_control" || true
+
+
 只有在默认 WebRTC 控制链不可用，或者你明确要走旧桥接方案时，再使用：
 
 ```bash
@@ -300,6 +334,27 @@ source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ros2 launch g1_controller cmd_vel_to_g1.launch.py
 ```
+
+#如果设置了点位但不动了：
+source /opt/ros/jazzy/setup.bash
+source /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/setup.bash
+export ROS_DOMAIN_ID=1
+
+ros2 param set /localPlanner autonomyMode true
+ros2 param set /pathFollower autonomyMode true
+ros2 topic pub --once /check_obstacle std_msgs/msg/Bool "{data: false}"
+ros2 topic pub --once /way_point geometry_msgs/msg/PointStamped "{header: {frame_id: 'map'}, point: {x: 1.0, y: 0.0, z: 0.0}}"
+
+
+另开一个终端，进入同一个 ROS 图：
+source /opt/ros/jazzy/setup.bash
+source /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/setup.bash
+export ROS_DOMAIN_ID=1
+
+先把自动导航模式打开：
+ros2 param set /localPlanner autonomyMode true
+ros2 param set /pathFollower autonomyMode true
+
 
 只要导航链路里有 `/cmd_vel` 输出，桥接节点就会把速度转发给 G1。
 
@@ -490,8 +545,13 @@ livox_mid360_calibration.yaml
 
 #录包
 cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+conda deactivate
+source ~/unitree_venv/bin/activate
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
+
+export ROS_DOMAIN_ID=1
 
 mkdir -p ~/bags
 timeout 30s ros2 bag record \
@@ -501,6 +561,7 @@ timeout 30s ros2 bag record \
   /tf \
   /tf_static \
   /state_estimation
+
 
 #检查
 ros2 bag info ~/bags/g1_slam_static_30s
@@ -541,3 +602,55 @@ ros2 bag info "$(ls -td ~/bags/g1_slam_check_* | head -n 1)"
 
 # 回放最新一个时间戳 bag
 ros2 bag play "$(ls -td ~/bags/g1_slam_check_* | head -n 1)"
+
+
+
+#完整
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+conda deactivate
+source ~/unitree_venv/bin/activate
+source /opt/ros/jazzy/setup.bash
+source /home/mhw/unitree_project/g1_ros_package/install/setup.bash
+source install/setup.bash
+
+export ROBOT_CONFIG_PATH=unitree/unitree_g1
+export ROS_DOMAIN_ID=1
+export LD_LIBRARY_PATH=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64:$LD_LIBRARY_PATH
+
+./system_real_robot_g1_bridge.sh --rviz \
+  network_interface:=enp108s0 \
+  g1_loco_client_path:=/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client \
+  unitree_sdk_lib_path:=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64
+
+
+
+#无运动
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+conda deactivate
+source ~/unitree_venv/bin/activate
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+export ROBOT_CONFIG_PATH=unitree/unitree_g1
+export ROS_DOMAIN_ID=1
+
+./system_real_robot.sh --rviz
+
+
+
+
+#非桥接诊断
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+conda deactivate
+source ~/unitree_venv/bin/activate
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+export ROBOT_CONFIG_PATH=unitree/unitree_g1
+export ROS_DOMAIN_ID=1
+
+./system_real_robot.sh --rviz \
+  slam_config_file:=/home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/arise_slam_mid360/share/arise_slam_mid360/config/livox_mid360_diag.yaml

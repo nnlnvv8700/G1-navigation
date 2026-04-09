@@ -2,10 +2,11 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
-from launch.launch_description_sources import PythonLaunchDescriptionSource, FrontendLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import FrontendLaunchDescriptionSource, PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from launch.substitutions import LaunchConfiguration 
+from launch.substitutions import LaunchConfiguration
+
 
 def generate_launch_description():
   world_name = LaunchConfiguration('world_name')
@@ -17,9 +18,13 @@ def generate_launch_description():
   autonomy_mode = LaunchConfiguration('autonomyMode')
   slam_config_file = LaunchConfiguration('slam_config_file')
 
-  robot_ip = LaunchConfiguration('robot_ip')
-  connection_method = LaunchConfiguration('connection_method')
-  control_mode = LaunchConfiguration('control_mode')
+  network_interface = LaunchConfiguration('network_interface')
+  g1_loco_client_path = LaunchConfiguration('g1_loco_client_path')
+  unitree_sdk_lib_path = LaunchConfiguration('unitree_sdk_lib_path')
+  command_timeout = LaunchConfiguration('command_timeout')
+  max_x_linear_velocity = LaunchConfiguration('max_x_linear_velocity')
+  max_y_linear_velocity = LaunchConfiguration('max_y_linear_velocity')
+  max_angular_velocity = LaunchConfiguration('max_angular_velocity')
 
   declare_world_name = DeclareLaunchArgument('world_name', default_value='real_world', description='')
   declare_cameraOffsetZ = DeclareLaunchArgument('cameraOffsetZ', default_value='0.25', description='')
@@ -45,23 +50,42 @@ def generate_launch_description():
     description='Path to arise_slam_mid360 config yaml'
   )
 
-  declare_robot_ip = DeclareLaunchArgument(
-    'robot_ip',
-    default_value='192.168.12.1',
-    description='Unitree robot IP address'
+  declare_network_interface = DeclareLaunchArgument(
+    'network_interface',
+    default_value='enp108s0',
+    description='Network interface used by g1_loco_client; use enp108s0 for the Unitree SDK control link, not Meta'
+  )
+  declare_g1_loco_client_path = DeclareLaunchArgument(
+    'g1_loco_client_path',
+    default_value='/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client',
+    description='Path to Unitree g1_loco_client executable'
+  )
+  declare_unitree_sdk_lib_path = DeclareLaunchArgument(
+    'unitree_sdk_lib_path',
+    default_value='/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64',
+    description='Path to Unitree SDK shared libraries'
+  )
+  declare_command_timeout = DeclareLaunchArgument(
+    'command_timeout',
+    default_value='0.1',
+    description='Minimum time between bridge commands in seconds'
+  )
+  declare_max_x_linear_velocity = DeclareLaunchArgument(
+    'max_x_linear_velocity',
+    default_value='0.2',
+    description='Safety clamp for x velocity in m/s'
+  )
+  declare_max_y_linear_velocity = DeclareLaunchArgument(
+    'max_y_linear_velocity',
+    default_value='0.15',
+    description='Safety clamp for y velocity in m/s'
+  )
+  declare_max_angular_velocity = DeclareLaunchArgument(
+    'max_angular_velocity',
+    default_value='0.2',
+    description='Safety clamp for yaw rate in rad/s'
   )
 
-  declare_connection_method = DeclareLaunchArgument(
-    'connection_method',
-    default_value='LocalAP',
-    description='Unitree connection method (e.g., LocalAP, Ethernet)'
-  )
-
-  declare_control_mode = DeclareLaunchArgument(
-    'control_mode',
-    default_value='sport_cmd',
-    description='Unitree control mode'
-  )
   start_local_planner = IncludeLaunchDescription(
     PythonLaunchDescriptionSource(os.path.join(
       get_package_share_directory('local_planner'), 'launch', 'local_planner.launch.py')
@@ -116,7 +140,7 @@ def generate_launch_description():
   )
 
   start_joy = Node(
-    package='joy', 
+    package='joy',
     executable='joy_node',
     name='ps3_joy',
     output='screen',
@@ -132,23 +156,25 @@ def generate_launch_description():
       [get_package_share_directory('livox_ros_driver2'), '/launch_ROS2/msg_MID360_launch.py']),
   )
 
-  start_unitree_webrtc = IncludeLaunchDescription(
+  start_g1_bridge = IncludeLaunchDescription(
     PythonLaunchDescriptionSource(os.path.join(
-      get_package_share_directory('unitree_webrtc_ros'),
+      get_package_share_directory('g1_controller'),
       'launch',
-      'unitree_control.launch.py')
+      'cmd_vel_to_g1.launch.py')
     ),
     launch_arguments={
-      'robot_ip': robot_ip,
-      'connection_method': connection_method,
-      'control_mode': control_mode,
+      'network_interface': network_interface,
+      'g1_loco_client_path': g1_loco_client_path,
+      'unitree_sdk_lib_path': unitree_sdk_lib_path,
+      'command_timeout': command_timeout,
+      'max_x_linear_velocity': max_x_linear_velocity,
+      'max_y_linear_velocity': max_y_linear_velocity,
+      'max_angular_velocity': max_angular_velocity,
     }.items()
   )
 
-
   ld = LaunchDescription()
 
-  # Add the actions
   ld.add_action(declare_world_name)
   ld.add_action(declare_cameraOffsetZ)
   ld.add_action(declare_vehicleX)
@@ -158,11 +184,14 @@ def generate_launch_description():
   ld.add_action(declare_autonomy_mode)
   ld.add_action(declare_slam_config_file)
 
-  ld.add_action(declare_robot_ip)
-  ld.add_action(declare_connection_method)
-  ld.add_action(declare_control_mode)
+  ld.add_action(declare_network_interface)
+  ld.add_action(declare_g1_loco_client_path)
+  ld.add_action(declare_unitree_sdk_lib_path)
+  ld.add_action(declare_command_timeout)
+  ld.add_action(declare_max_x_linear_velocity)
+  ld.add_action(declare_max_y_linear_velocity)
+  ld.add_action(declare_max_angular_velocity)
 
-  # Add actions
   ld.add_action(start_local_planner)
   ld.add_action(start_terrain_analysis)
   ld.add_action(start_terrain_analysis_ext)
@@ -171,6 +200,6 @@ def generate_launch_description():
   ld.add_action(start_visualization_tools)
   ld.add_action(start_joy)
   ld.add_action(start_mid360)
-  ld.add_action(start_unitree_webrtc)
+  ld.add_action(start_g1_bridge)
 
   return ld
