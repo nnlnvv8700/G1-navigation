@@ -13,8 +13,8 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import TwistStamped
 from std_srvs.srv import Trigger
 
-from unitree_webrtc_connect.webrtc_driver import UnitreeWebRTCConnection, WebRTCConnectionMethod
-from unitree_webrtc_connect.constants import RTC_TOPIC, SPORT_CMD
+from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
+from go2_webrtc_driver.constants import RTC_TOPIC, SPORT_CMD
 
 
 class UnitreeControlNode(Node):
@@ -95,7 +95,7 @@ class UnitreeControlNode(Node):
 
         try:
             # Create connection
-            self.conn = UnitreeWebRTCConnection(
+            self.conn = Go2WebRTCConnection(
                 self.connection_method,
                 ip=self.robot_ip
             )
