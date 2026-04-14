@@ -1,0 +1,377 @@
+G1 导航系统部署步骤
+====================
+
+这份文档用于指导别人把当前 G1 导航系统部署到机器上并跑起来。
+
+当前已经验证过的控制链为：
+
+/way_point -> /path -> /cmd_vel -> cmd_vel_to_g1 -> g1_loco_client -> G1
+
+使用的两个工作空间：
+
+1. 导航工作空间：
+   /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+2. G1 速度桥接工作空间：
+   /home/mhw/unitree_project/g1_ros_package
+
+
+一、首次编译
+------------
+
+1. 编译 G1 导航工作空间
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+如果只想单独重编 SLAM：
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release \
+  --packages-select arise_slam_mid360 arise_slam_mid360_msgs
+
+如果只想单独重编 Mid-360 / Livox 驱动：
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release \
+  --packages-select livox_ros_driver2
+
+如果只想单独重编导航相关包，也可以一起编：
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release \
+  --packages-select vehicle_simulator local_planner terrain_analysis terrain_analysis_ext sensor_scan_generation
+
+2. 编译 G1 电机 / 速度桥接工作空间
+
+cd /home/mhw/unitree_project/g1_ros_package
+source /opt/ros/jazzy/setup.bash
+
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --packages-select g1_controller
+
+3. 如何检查是否编译成功
+
+先检查安装目录是否存在：
+
+ls /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/arise_slam_mid360
+ls /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/livox_ros_driver2
+ls /home/mhw/unitree_project/g1_ros_package/install/g1_controller
+
+正常情况下，至少应该看到：
+
+- `arise_slam_mid360` 目录下有 `include / lib / share`
+- `livox_ros_driver2` 目录下有 `include / lib / share`
+- `g1_controller` 目录下有 `lib / share`
+
+再用 `ros2 pkg prefix` 检查包是否能被 ROS2 找到。
+
+检查 SLAM：
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+
+ros2 pkg prefix arise_slam_mid360
+ros2 pkg prefix livox_ros_driver2
+ros2 pkg prefix vehicle_simulator
+ros2 pkg prefix local_planner
+
+正常应该返回：
+
+- `/home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/...`
+
+检查电机桥接：
+
+cd /home/mhw/unitree_project/g1_ros_package
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+ros2 pkg prefix g1_controller
+
+正常应该返回：
+
+- `/home/mhw/unitree_project/g1_ros_package/install/g1_controller`
+
+还可以用 launch 参数检查桥接包是不是可用：
+
+cd /home/mhw/unitree_project/g1_ros_package
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+ros2 launch g1_controller cmd_vel_to_g1.launch.py --show-args
+
+如果能正常显示参数列表，说明桥接 launch 已经编译好并能被 ROS2 解析。
+
+
+二、每次启动前先清旧进程
+------------------------
+
+每次重新启动前都先执行，避免出现：
+
+- 地图重影
+- 点云/TF 叠层
+- 旧的 localPlanner、pathFollower、livox、cmd_vel_to_g1 干扰新实例
+
+pkill -f "ros2 launch vehicle_simulator system_real_robot.launch" || true
+pkill -f "ros2 launch vehicle_simulator system_real_robot_g1_bridge.launch.py" || true
+pkill -f "livox_ros_driver2_node" || true
+pkill -f "feature_extraction_node" || true
+pkill -f "imu_preintegration_node" || true
+pkill -f "laser_mapping_node" || true
+pkill -f "localPlanner" || true
+pkill -f "pathFollower" || true
+pkill -f "terrainAnalysis" || true
+pkill -f "terrainAnalysisExt" || true
+pkill -f "sensorScanGeneration" || true
+pkill -f "visualizationTools" || true
+pkill -f "cmd_vel_to_g1" || true
+pkill -f "unitree_control" || true
+
+
+三、先把机器人切到可运动态
+--------------------------
+
+点位导航前，先让 G1 进入能够接受速度指令的模式。
+
+推荐做法：
+
+- 直接用遥控器把机器人切到正常站立、可行走状态
+
+如果遥控器不可用，可以用下面的命令：
+
+export LD_LIBRARY_PATH=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64:$LD_LIBRARY_PATH
+
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --set_fsm_id=1
+sleep 1
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --set_fsm_id=4
+sleep 2
+
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --get_fsm_id
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --get_fsm_mode
+
+如果 fsm_id=4 不工作，再试：
+
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --set_fsm_id=500
+
+
+四、启动导航主链
+---------------
+
+终端 1：
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+conda deactivate 2>/dev/null || true
+source ~/unitree_venv/bin/activate
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+
+export ROBOT_CONFIG_PATH=unitree/unitree_g1
+export ROS_DOMAIN_ID=1
+
+./system_real_robot.sh --rviz
+
+如果第一次部署时想先确认主链是否起来，也可以先不用 RViz：
+
+./system_real_robot.sh --no-rviz
+
+之后再单独开 RViz：
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+export ROS_DOMAIN_ID=1
+rviz2 -d src/base_autonomy/vehicle_simulator/rviz/vehicle_simulator.rviz
+
+
+五、启动 G1 速度桥接
+--------------------
+
+终端 2：
+
+cd /home/mhw/unitree_project/g1_ros_package
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=1
+export LD_LIBRARY_PATH=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64:$LD_LIBRARY_PATH
+
+ros2 launch g1_controller cmd_vel_to_g1.launch.py \
+  network_interface:=enp108s0 \
+  g1_loco_client_path:=/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client \
+  unitree_sdk_lib_path:=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64
+
+
+六、打开自动导航模式
+--------------------
+
+终端 3：
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+export ROS_DOMAIN_ID=1
+
+ros2 param set /localPlanner autonomyMode true
+ros2 param set /pathFollower autonomyMode true
+
+
+七、正常点位导航
+---------------
+
+如果场景正常，直接在 RViz 里设置目标点。
+
+检查规划和速度：
+
+ros2 topic echo /path --once
+ros2 topic echo /cmd_vel --once
+
+正常现象：
+
+- /path 是一串路径点，不是只有一个原点
+- /cmd_vel 是非零速度
+
+
+八、如果点位设了但机器人不动
+--------------------------
+
+典型症状：
+
+- RViz 里已经设置了目标点
+- /path 只有一个点，位置在 (0, 0, 0)
+- /cmd_vel 全 0
+
+这通常说明当前现场里 localPlanner 把候选路径都筛掉了。
+
+当前已经验证可走的临时处理方式：
+
+source /opt/ros/jazzy/setup.bash
+source /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/local_setup.bash
+export ROS_DOMAIN_ID=1
+
+ros2 param set /localPlanner autonomyMode true
+ros2 param set /pathFollower autonomyMode true
+ros2 topic pub --once /check_obstacle std_msgs/msg/Bool "{data: false}"
+ros2 topic pub --once /way_point geometry_msgs/msg/PointStamped "{header: {frame_id: 'map'}, point: {x: 1.0, y: 0.0, z: 0.0}}"
+
+然后再检查：
+
+ros2 topic echo /path --once
+ros2 topic echo /cmd_vel --once
+
+如果恢复正常，通常会看到：
+
+- /path 不再只有原点
+- /cmd_vel 变成非零速度
+
+注意：
+
+- /check_obstacle=false 是当前现场的临时运行方案，不是最终安全配置
+- 测试时前方必须保持空场
+- 后续如果要恢复安全配置，需要继续调：
+  - checkObstacle
+  - useTerrainAnalysis
+  - obstacleHeightThre
+  - pointPerPathThre
+
+
+九、常用检查命令
+----------------
+
+1. 检查节点
+
+source /opt/ros/jazzy/setup.bash
+source /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/local_setup.bash
+export ROS_DOMAIN_ID=1
+
+ros2 node list | rg "localPlanner|pathFollower|cmd_vel_to_g1|livox|imu_preintegration|laser_mapping"
+
+2. 检查关键话题
+
+ros2 topic list | rg "imu|lidar|state_estimation|way_point|path|cmd_vel"
+
+3. 检查桥接是否已经订到 /cmd_vel
+
+ros2 topic info /cmd_vel -v
+
+正常应该看到：
+
+- publisher：pathFollower
+- subscription：cmd_vel_to_g1
+
+
+十、静止 30 秒录包
+------------------
+
+用于检查 SLAM 是否漂移。
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+export ROS_DOMAIN_ID=1
+
+mkdir -p ~/bags
+rm -rf ~/bags/g1_slam_static_30s_check
+
+timeout 30s ros2 bag record \
+  -o ~/bags/g1_slam_static_30s_check \
+  /imu/data \
+  /lidar/scan \
+  /tf \
+  /tf_static \
+  /state_estimation
+
+查看包信息：
+
+ros2 bag info ~/bags/g1_slam_static_30s_check
+
+
+十一、分析静止包
+----------------
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+
+/usr/bin/python3 tools/analyze_g1_slam_bag.py /home/mhw/bags/g1_slam_static_30s_check
+
+当前已经验证过的一次正常静止结果大致是：
+
+- endpoint_drift = 0.032 m
+- speed_avg = 0.014 m/s
+- speed_max = 0.041 m/s
+
+如果结果明显大很多，说明当前运行态可能又脏了，或者 SLAM 状态不稳定。
+
+
+十二、现场排查顺序
+------------------
+
+如果机器人不动，按这个顺序查：
+
+1. G1 是否已经切到可运动态
+2. /localPlanner 和 /pathFollower 的 autonomyMode 是否为 true
+3. /path 是不是只有原点
+4. /cmd_vel 是不是全 0
+5. cmd_vel_to_g1 是否存在并订到了 /cmd_vel
+6. 必要时临时执行 /check_obstacle=false
+
+如果地图重影或 SLAM 明显异常，优先查：
+
+1. 旧进程有没有杀干净
+2. 当前是不是只 source 了 unitree_g1 这套工作空间
+3. 当前是不是用了 install/local_setup.bash

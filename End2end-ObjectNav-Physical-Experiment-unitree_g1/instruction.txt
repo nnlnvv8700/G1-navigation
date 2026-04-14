@@ -1,38 +1,314 @@
-# kill ros processes
-sudo pkill -9 -f '/opt/ros/.*\/lib\/|\/install\/.*\/lib\/|_ros2_daemon|^[[:space:]]*ros2$'
+G1 Navigation Deployment Instructions
+=====================================
+
+This file is the deployment note for running the G1 navigation stack on a new machine.
+
+The currently verified runtime path is:
+
+way_point -> path -> cmd_vel -> cmd_vel_to_g1 -> g1_loco_client -> G1
+
+Workspace layout
+----------------
+
+1. Navigation workspace:
+   /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+2. G1 bridge workspace:
+   /home/mhw/unitree_project/g1_ros_package
+
+3. Unitree SDK path used by the bridge:
+   /home/mhw/robot_g1/unitree_sdk2
 
 
-# Remember to turn off the collision avoidance 
+1. First-time build
+-------------------
+
+1. Build the G1 navigation workspace.
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+2. Build the G1 bridge workspace.
+
+cd /home/mhw/unitree_project/g1_ros_package
+source /opt/ros/jazzy/setup.bash
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --packages-select g1_controller
+
+3. Optional rebuild commands.
+
+Rebuild SLAM only:
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release \
+  --packages-select arise_slam_mid360 arise_slam_mid360_msgs
+
+Rebuild Livox driver only:
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+colcon build --executor sequential --parallel-workers 1 --symlink-install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release \
+  --packages-select livox_ros_driver2
 
 
+2. Before every launch
+----------------------
+
+Always kill stale ROS processes first. Old processes can cause:
+
+- duplicated point clouds
+- map ghosting
+- duplicated TF
+- old planner / bridge instances interfering with the new run
+
+pkill -f "ros2 launch vehicle_simulator system_real_robot.launch" || true
+pkill -f "ros2 launch vehicle_simulator system_real_robot_g1_bridge.launch.py" || true
+pkill -f "livox_ros_driver2_node" || true
+pkill -f "feature_extraction_node" || true
+pkill -f "imu_preintegration_node" || true
+pkill -f "laser_mapping_node" || true
+pkill -f "localPlanner" || true
+pkill -f "pathFollower" || true
+pkill -f "terrainAnalysis" || true
+pkill -f "terrainAnalysisExt" || true
+pkill -f "sensorScanGeneration" || true
+pkill -f "visualizationTools" || true
+pkill -f "cmd_vel_to_g1" || true
+pkill -f "unitree_control" || true
+
+
+3. Put G1 into locomotion mode
+------------------------------
+
+Before waypoint navigation, make sure G1 is in a mode that accepts velocity commands.
+
+Preferred method:
+
+- use the remote controller to put the robot into a normal standing locomotion state
+
+If the remote is not available, use g1_loco_client:
+
+export LD_LIBRARY_PATH=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64:$LD_LIBRARY_PATH
+
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --set_fsm_id=1
+sleep 1
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --set_fsm_id=4
+sleep 2
+
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --get_fsm_id
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --get_fsm_mode
+
+If fsm_id 4 does not work, try:
+
+/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client --network_interface=enp108s0 --set_fsm_id=500
+
+
+4. Start the navigation stack
+-----------------------------
+
+Terminal 1:
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+conda deactivate 2>/dev/null || true
+source ~/unitree_venv/bin/activate
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+
+export ROBOT_CONFIG_PATH=unitree/unitree_g1
+export ROS_DOMAIN_ID=1
+
+./system_real_robot.sh --rviz
+
+If RViz causes confusion on a new machine, start without RViz first:
+
+./system_real_robot.sh --no-rviz
+
+Then open RViz manually in another terminal:
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+export ROS_DOMAIN_ID=1
+rviz2 -d src/base_autonomy/vehicle_simulator/rviz/vehicle_simulator.rviz
+
+
+5. Start the G1 cmd_vel bridge
+------------------------------
+
+Terminal 2:
+
+cd /home/mhw/unitree_project/g1_ros_package
 
 source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=1
+export LD_LIBRARY_PATH=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64:$LD_LIBRARY_PATH
 
-source install/setup.sh
-
-
-
-# slow mode (joystick webrtc
-
-1. 
-export ROBOT_CONFIG_PATH="unitree/unitree_go2_slow"
-./system_real_robot.sh
+ros2 launch g1_controller cmd_vel_to_g1.launch.py \
+  network_interface:=enp108s0 \
+  g1_loco_client_path:=/home/mhw/robot_g1/unitree_sdk2/build/bin/g1_loco_client \
+  unitree_sdk_lib_path:=/home/mhw/robot_g1/unitree_sdk2/thirdparty/lib/x86_64
 
 
-2. 
-ros2 launch unitree_webrtc_ros unitree_control.launch.py robot_ip:=192.168.12.1 connection_method:=LocalAP control_mode:=wireless_controller
+6. Enable autonomy mode
+-----------------------
+
+Terminal 3:
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+export ROS_DOMAIN_ID=1
+
+ros2 param set /localPlanner autonomyMode true
+ros2 param set /pathFollower autonomyMode true
 
 
+7. Normal waypoint usage
+------------------------
+
+If the scene is normal, set a waypoint in RViz.
+
+Check that the planner and follower are active:
+
+ros2 topic echo /path --once
+ros2 topic echo /cmd_vel --once
+
+Expected:
+
+- /path is a sequence of points, not just one origin point
+- /cmd_vel is non-zero when the robot should move
 
 
-# fast mode (joystick webrtc
-1. 
-export ROBOT_CONFIG_PATH="unitree/unitree_go2_fast"
-./system_real_robot.sh
+8. If waypoint is set but robot does not move
+---------------------------------------------
+
+Typical symptoms:
+
+- target point is set in RViz
+- /path only contains one point at (0, 0, 0)
+- /cmd_vel is all zero
+
+In the currently verified field setup, this usually means the obstacle filter rejected all candidate paths.
+
+Use this temporary recovery sequence:
+
+source /opt/ros/jazzy/setup.bash
+source /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/local_setup.bash
+export ROS_DOMAIN_ID=1
+
+ros2 param set /localPlanner autonomyMode true
+ros2 param set /pathFollower autonomyMode true
+ros2 topic pub --once /check_obstacle std_msgs/msg/Bool "{data: false}"
+ros2 topic pub --once /way_point geometry_msgs/msg/PointStamped "{header: {frame_id: 'map'}, point: {x: 1.0, y: 0.0, z: 0.0}}"
+
+Then check again:
+
+ros2 topic echo /path --once
+ros2 topic echo /cmd_vel --once
+
+If it recovers, you should see:
+
+- /path becomes a real multi-point path
+- /cmd_vel becomes non-zero
+
+Important:
+
+- /check_obstacle=false is a temporary field workaround, not the final safe configuration
+- keep clear space in front of the robot when using it
+- later, tune checkObstacle / useTerrainAnalysis / obstacleHeightThre / pointPerPathThre properly
 
 
-2. 
-ros2 launch unitree_webrtc_ros unitree_control.launch.py robot_ip:=192.168.12.1 connection_method:=LocalAP 
+9. Useful checks
+----------------
+
+Check nodes:
+
+source /opt/ros/jazzy/setup.bash
+source /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1/install/local_setup.bash
+export ROS_DOMAIN_ID=1
+
+ros2 node list | rg "localPlanner|pathFollower|cmd_vel_to_g1|livox|imu_preintegration|laser_mapping"
+
+Check core topics:
+
+ros2 topic list | rg "imu|lidar|state_estimation|way_point|path|cmd_vel"
+
+Check whether the bridge is subscribed to /cmd_vel:
+
+ros2 topic info /cmd_vel -v
+
+Expected:
+
+- publisher: pathFollower
+- subscription: cmd_vel_to_g1
 
 
+10. Static SLAM recording
+-------------------------
 
+Use this to verify whether SLAM is drifting while the robot is standing still.
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+export ROS_DOMAIN_ID=1
+
+mkdir -p ~/bags
+rm -rf ~/bags/g1_slam_static_30s_check
+
+timeout 30s ros2 bag record \
+  -o ~/bags/g1_slam_static_30s_check \
+  /imu/data \
+  /lidar/scan \
+  /tf \
+  /tf_static \
+  /state_estimation
+
+Inspect the bag:
+
+ros2 bag info ~/bags/g1_slam_static_30s_check
+
+
+11. Analyze the static bag
+--------------------------
+
+cd /home/mhw/unitree_project/End2end-ObjectNav-Physical-Experiment-unitree_g1
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+
+/usr/bin/python3 tools/analyze_g1_slam_bag.py /home/mhw/bags/g1_slam_static_30s_check
+
+A previously verified healthy static result was roughly:
+
+- endpoint_drift = 0.032 m
+- speed_avg = 0.014 m/s
+- speed_max = 0.041 m/s
+
+If the result is much worse, the runtime may be dirty again or SLAM may be unstable.
+
+
+12. Fast troubleshooting order
+------------------------------
+
+If the robot does not move:
+
+1. Check that G1 is really in locomotion mode.
+2. Check /localPlanner and /pathFollower autonomyMode.
+3. Check whether /path only contains the origin point.
+4. Check whether /cmd_vel is zero.
+5. Check whether cmd_vel_to_g1 exists and is subscribed to /cmd_vel.
+6. If needed, temporarily use /check_obstacle=false.
+
+If the map or SLAM looks wrong:
+
+1. Kill all stale processes first.
+2. Make sure only the unitree_g1 workspace is sourced.
+3. Prefer install/local_setup.bash for this workspace.
